@@ -3,4 +3,4 @@ __pycache__/
 .env
 *.pyc
 .DS_Store
-data/.env.elastic
+.env.elastic
