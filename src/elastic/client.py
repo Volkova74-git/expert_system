@@ -19,11 +19,10 @@ ELASTIC_PASSWORD  = os.getenv("ELASTIC_PASSWORD")
 
 client = Elasticsearch(
     [settings.es_host],
-    basic_auth=(ELASTIC_USER, ELASTIC_PASSWORD),
+    basic_auth=(settings.elastic_user, settings.elastic_password),
     verify_certs=False,
-    request_timeout=120,
-    max_retries=10,
-    retry_on_timeout=True  #
+    request_timeout=30,
+    retry_on_timeout=True
 )
 
 def create_index():
