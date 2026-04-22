@@ -16,8 +16,8 @@ CHUNK_OVERLAP = 50
 def load_giga():
     """Инициализация клиента GigaChat"""
     return GigaChat(
-        #credentials="",
-        credentials=os.getenv("GIGACHAT_CREDENTIALS"),
+        credentials="",
+        #credentials=os.getenv("GIGACHAT_CREDENTIALS"),
         verify_ssl_certs=False,
         scope="GIGACHAT_API_PERS",
         model="GigaChat-Pro",

@@ -1,8 +1,9 @@
 import streamlit as st
 import numpy as np
-import pickle
 import io
 import os
+import base64
+import tempfile
 from elasticsearch import Elasticsearch
 from gigachat import GigaChat
 from gigachat.models import Chat, Messages, MessagesRole
@@ -10,9 +11,11 @@ from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_JUSTIFY, TA_LEFT
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from dotenv import load_dotenv
 
-load_dotenv()  # загружаем переменные из .env
+load_dotenv()
 
 # ========== НАСТРОЙКИ ==========
 ES_HOST = "http://127.0.0.1:9200"
@@ -20,14 +23,96 @@ INDEX_NAME = "construction_standards"
 TOP_K = 5
 
 
+# ===============================
+
+# ---------- Регистрация кириллического шрифта ----------
+def register_russian_font():
+    """Пытается зарегистрировать шрифт с поддержкой кириллицы."""
+    possible_fonts = [
+        "C:/Windows/Fonts/arial.ttf",  # Windows
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",  # Linux
+        "/System/Library/Fonts/Arial.ttf",  # macOS
+        os.path.join(os.path.dirname(__file__), "fonts", "DejaVuSerif.ttf")
+    ]
+    for font_path in possible_fonts:
+        if os.path.exists(font_path):
+            pdfmetrics.registerFont(TTFont('RussianFont', font_path))
+            return 'RussianFont'
+    # Если не нашли, возвращаем стандартный (кириллица не отобразится)
+    return 'Helvetica'
+
+
+RUSSIAN_FONT = register_russian_font()
+
+# ---------- CSS стили ----------
+st.markdown("""
+<style>
+.main-header {
+    font-size: 2.5rem;
+    font-weight: bold;
+    text-align: center;
+    color: #1565C0;
+    margin-bottom: 2rem;
+    padding: 1rem;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+.section-header {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: #0D47A1;
+    margin-top: 1rem;
+    margin-bottom: 1rem;
+    border-left: 4px solid #1565C0;
+    padding-left: 1rem;
+}
+.result-card {
+    background-color: #f8f9fa;
+    border-radius: 10px;
+    padding: 15px;
+    margin: 10px 0;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    border-left: 4px solid #1565C0;
+}
+.selected-card {
+    background-color: #e8f5e9;
+    border-left-color: #4caf50;
+}
+.image-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 15px;
+}
+.image-item {
+    position: relative;
+    width: calc(33% - 10px);
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+.image-item img {
+    width: 100%;
+    height: 150px;
+    object-fit: cover;
+}
+.defect-card {
+    background: #f0f2f6;
+    border-radius: 15px;
+    padding: 15px;
+    margin-bottom: 20px;
+}
+</style>
+""", unsafe_allow_html=True)
+
 
 # ---------- Функции для работы с GigaChat и Elasticsearch ----------
 @st.cache_resource
 def load_giga():
-    """Инициализация клиента GigaChat (кэшируется)"""
-
     return GigaChat(
-        credentials=os.getenv("GIGACHAT_CREDENTIALS", ""),
+        credentials=os.getenv("GIGACHAT_CREDENTIALS",
+                              ""),
         verify_ssl_certs=False,
         scope="GIGACHAT_API_PERS",
         model="GigaChat-Pro",
@@ -39,13 +124,11 @@ def load_giga():
 
 @st.cache_resource
 def load_elasticsearch():
-    """Подключение к Elasticsearch (кэшируется)"""
     return Elasticsearch(ES_HOST)
 
 
 @st.cache_resource
 def get_available_documents(es, index_name):
-    """Получить список уникальных названий нормативов (doc_name) для фильтрации"""
     body = {
         "size": 0,
         "aggs": {
@@ -60,27 +143,21 @@ def get_available_documents(es, index_name):
 
 
 def get_embedding(giga, text: str):
-    """Получить эмбеддинг для текста через GigaChat"""
     response = giga.embeddings([text])
     return np.array(response.data[0].embedding, dtype=np.float32).tolist()
 
 
-def find_similar(query_text: str, giga, es, index_name: str, top_k: int = TOP_K, doc_filter: str = None):
-    """Поиск релевантных чанков через Elasticsearch с нормализованной оценкой"""
+def find_similar(query_text, giga, es, index_name, top_k=TOP_K, doc_filter=None):
     query_vector = get_embedding(giga, query_text)
-
-    # Базовый запрос (находит все документы)
     base_query = {"match_all": {}}
     if doc_filter and doc_filter != "Все":
         base_query = {"term": {"doc_name.keyword": doc_filter}}
-
     body = {
         "size": top_k,
         "query": {
             "script_score": {
                 "query": base_query,
                 "script": {
-                    # Нормализуем оценку в диапазон [0, 1]
                     "source": "(cosineSimilarity(params.query_vector, 'vector') + 1.0) / 2.0",
                     "params": {"query_vector": query_vector}
                 }
@@ -88,44 +165,54 @@ def find_similar(query_text: str, giga, es, index_name: str, top_k: int = TOP_K,
         }
     }
     response = es.search(index=index_name, body=body)
-
     results = []
     for hit in response['hits']['hits']:
         results.append({
             "text": hit['_source']['chunk_text'],
-            "score": hit['_score'],  # уже в диапазоне [0,1]
-            "chunk_index": hit['_source'].get('chunk_index', int(hit['_id'])),
-            "doc_name": hit['_source'].get('doc_name', 'Неизвестный документ')
+            "score": hit['_score'],
+            "chunk_index": hit['_source'].get('chunk_index', 0),
+            "doc_name": hit['_source'].get('doc_name', 'Неизвестный документ'),
+            "doc_id": hit['_id']
         })
     return results
 
 
-# ---------- Генерация PDF ----------
-def generate_report(defect_description, chosen_chunks_with_names, analysis_text):
-    """Генерирует PDF-отчет с результатами, включая названия нормативов"""
+def generate_report(defects_data, analysis_text):
+    """
+    defects_data: список словарей, каждый содержит:
+        - photo_filename: str (имя файла)
+        - description: str
+        - selected_chunks: list of (doc_name, chunk_text)
+    analysis_text: строка с общим анализом от GigaChat
+    """
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=72, leftMargin=72, topMargin=72, bottomMargin=72)
     styles = getSampleStyleSheet()
 
-    style_title = ParagraphStyle('Title', parent=styles['Title'], fontSize=16, alignment=TA_LEFT, spaceAfter=12)
-    style_heading = ParagraphStyle('Heading', parent=styles['Heading2'], fontSize=12, alignment=TA_LEFT, spaceAfter=6,
-                                   spaceBefore=12)
-    style_body = ParagraphStyle('Body', parent=styles['Normal'], fontSize=10, alignment=TA_JUSTIFY, leading=14,
-                                spaceAfter=12)
+    style_title = ParagraphStyle('Title', parent=styles['Title'], fontSize=16, fontName=RUSSIAN_FONT, alignment=TA_LEFT,
+                                 spaceAfter=12)
+    style_heading = ParagraphStyle('Heading', parent=styles['Heading2'], fontSize=12, fontName=RUSSIAN_FONT,
+                                   alignment=TA_LEFT, spaceAfter=6, spaceBefore=12)
+    style_body = ParagraphStyle('Body', parent=styles['Normal'], fontSize=10, fontName=RUSSIAN_FONT,
+                                alignment=TA_JUSTIFY, leading=14, spaceAfter=12)
 
     story = []
-    story.append(Paragraph("Отчет по результатам анализа дефекта", style_title))
+    story.append(Paragraph("Общий отчет по результатам анализа дефектов", style_title))
     story.append(Spacer(1, 12))
 
-    story.append(Paragraph("Описание дефекта:", style_heading))
-    story.append(Paragraph(defect_description, style_body))
+    for idx, defect in enumerate(defects_data, 1):
+        story.append(Paragraph(f"Дефект №{idx}: {defect['photo_filename']}", style_heading))
+        story.append(Paragraph(f"Описание: {defect['description']}", style_body))
+        if defect['selected_chunks']:
+            story.append(Paragraph("Выбранные пункты нормативов:", style_heading))
+            for i, (doc_name, chunk_text) in enumerate(defect['selected_chunks'], 1):
+                short_chunk = chunk_text[:300] + "..." if len(chunk_text) > 300 else chunk_text
+                story.append(Paragraph(f"{i}. {doc_name}: {short_chunk}", style_body))
+        else:
+            story.append(Paragraph("Нормативные пункты не выбраны.", style_body))
+        story.append(Spacer(1, 12))
 
-    story.append(Paragraph("Выбранные пункты нормативов:", style_heading))
-    for i, (doc_name, chunk_text) in enumerate(chosen_chunks_with_names, 1):
-        short_chunk = chunk_text[:500] + "..." if len(chunk_text) > 500 else chunk_text
-        story.append(Paragraph(f"<b>{i}. {doc_name}</b><br/>{short_chunk}", style_body))
-
-    story.append(Paragraph("Заключение и рекомендации:", style_heading))
+    story.append(Paragraph("Общее заключение и рекомендации", style_heading))
     story.append(Paragraph(analysis_text.replace('\n', '<br/>'), style_body))
 
     doc.build(story)
@@ -133,145 +220,162 @@ def generate_report(defect_description, chosen_chunks_with_names, analysis_text)
 
 
 # ---------- Интерфейс Streamlit ----------
-st.set_page_config(page_title="Поиск по строительным нормативам", layout="wide")
-st.title("🏗️ Поиск и анализ дефектов по строительным нормативам")
+st.markdown('<div class="main-header">🏗️ Поиск и анализ дефектов по строительным нормативам</div>',
+            unsafe_allow_html=True)
 
-# Проверка подключения к Elasticsearch
+# Подключение к Elasticsearch
 try:
     es = load_elasticsearch()
     if not es.ping():
         st.error("❌ Не удалось подключиться к Elasticsearch. Убедитесь, что контейнер запущен (docker-compose up -d).")
         st.stop()
     if not es.indices.exists(index=INDEX_NAME):
-        st.error(f"❌ Индекс '{INDEX_NAME}' не найден. Сначала запустите python index_to_elasticsearch.py")
+        st.error(f"❌ Индекс '{INDEX_NAME}' не найден. Сначала запустите batch_index.py")
         st.stop()
+    st.success("✅ Подключение к Elasticsearch успешно")
 except Exception as e:
-    st.error(f"Ошибка подключения к Elasticsearch: {e}")
+    st.error(f"Ошибка Elasticsearch: {e}")
     st.stop()
 
-# Загрузка клиента GigaChat
+# Подключение к GigaChat
 try:
     giga = load_giga()
+    st.success("✅ Подключение к GigaChat успешно")
 except Exception as e:
-    st.error(f"Ошибка инициализации GigaChat: {e}")
+    st.error(f"Ошибка GigaChat: {e}")
     st.stop()
 
-# Получение списка доступных нормативов для фильтрации
+# Список нормативов для фильтра
 try:
     doc_list = get_available_documents(es, INDEX_NAME)
-    doc_list.insert(0, "Все")  # добавляем опцию "Все"
+    doc_list.insert(0, "Все")
 except:
     doc_list = ["Все"]
 
-# Инициализация состояния сессии
-if 'selected_chunks' not in st.session_state:
-    st.session_state.selected_chunks = []  # храним кортежи (doc_name, text)
+# Инициализация сессии
+if 'defects' not in st.session_state:
+    st.session_state.defects = []  # список дефектов
 if 'analysis_done' not in st.session_state:
     st.session_state.analysis_done = False
-if 'defect_description' not in st.session_state:
-    st.session_state.defect_description = ""
+if 'final_analysis' not in st.session_state:
+    st.session_state.final_analysis = ""
 
-# Две колонки: фото и описание
-col1, col2 = st.columns(2)
-with col1:
-    uploaded_files = st.file_uploader("📸 Загрузите фото дефектов", type=["jpg", "png", "jpeg"],
-                                      accept_multiple_files=True)
-    for uploaded_file in uploaded_files:
-        st.image(uploaded_file, width=200, caption=uploaded_file.name)
+# Фильтр по нормативу (глобальный)
+selected_doc_filter = st.selectbox("📄 Фильтр по нормативу", doc_list, index=0)
 
-with col2:
-    defect_description = st.text_area("📝 Опишите дефект", height=200,
-                                      placeholder="Пример: На бетонной поверхности обнаружены трещины шириной до 2 мм...")
-    # Выбор норматива (фильтр)
-    selected_doc_filter = st.selectbox("📄 Фильтр по нормативу", doc_list, index=0)
-    search_button = st.button("🔍 Найти пункты в нормативах")
+# Форма добавления нового дефекта
+with st.form("add_defect_form"):
+    uploaded_photo = st.file_uploader("Загрузите фото дефекта", type=["jpg", "png", "jpeg"], key="new_photo")
+    defect_description = st.text_area("Описание дефекта", placeholder="Пример: трещина в бетонной стене...")
+    add_button = st.form_submit_button("➕ Добавить дефект")
 
-# Поиск
-if search_button and defect_description:
-    st.session_state.defect_description = defect_description
-    with st.spinner("Поиск релевантных пунктов через Elasticsearch..."):
-        results = find_similar(defect_description, giga, es, INDEX_NAME, top_k=TOP_K, doc_filter=selected_doc_filter)
-
-    if results:
-        st.subheader("📚 Найденные пункты нормативов")
-        st.session_state.search_results = results
-        st.session_state.selected_chunks = []
-
-        for i, res in enumerate(results):
-            # Отображаем название документа и нормализованный процент
-            with st.expander(f"**{res['doc_name']}** (Совпадение: {res['score']:.2%})"):
-                st.write(res['text'])
-                if st.button(f"Выбрать этот пункт", key=f"btn_{i}"):
-                    # Сохраняем и название, и текст
-                    if (res['doc_name'], res['text']) not in st.session_state.selected_chunks:
-                        st.session_state.selected_chunks.append((res['doc_name'], res['text']))
-                        st.success(f"Пункт из {res['doc_name']} добавлен для анализа")
-    else:
-        st.warning("По вашему запросу ничего не найдено. Попробуйте изменить описание.")
-
-# Отображение выбранных пунктов
-if st.session_state.selected_chunks:
-    st.subheader(f"✅ Выбранные пункты для анализа ({len(st.session_state.selected_chunks)})")
-    for i, (doc_name, chunk_text) in enumerate(st.session_state.selected_chunks):
-        st.text_area(f"Пункт {i + 1} — {doc_name}", chunk_text[:300], height=100, key=f"selected_{i}")
-
-    if st.button("🗑️ Очистить список"):
-        st.session_state.selected_chunks = []
+    if add_button and uploaded_photo and defect_description:
+        # Сохраняем фото во временный файл
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
+            tmp.write(uploaded_photo.getvalue())
+            tmp_path = tmp.name
+        st.session_state.defects.append({
+            "photo": tmp_path,
+            "photo_filename": uploaded_photo.name,
+            "description": defect_description,
+            "selected_chunks": []  # список кортежей (doc_name, chunk_text)
+        })
+        st.success("✅ Дефект добавлен. Теперь для него можно выполнить поиск нормативов.")
         st.rerun()
 
-# Финальный анализ и отчёт
-if st.session_state.selected_chunks and st.button("🤖 Проанализировать и создать отчёт"):
-    with st.spinner("GigaChat анализирует дефекты и готовит рекомендации..."):
-        # Формируем промпт с указанием названий нормативов
-        normatives_text = "\n".join(
-            [f"[{doc_name}] {chunk_text}" for doc_name, chunk_text in st.session_state.selected_chunks])
-        prompt = f"""
-        Ты — эксперт по строительным нормам и правилам.
+# Отображение списка дефектов
+if st.session_state.defects:
+    st.markdown("### 📋 Список добавленных дефектов")
+    for idx, defect in enumerate(st.session_state.defects):
+        with st.expander(f"Дефект {idx + 1}: {defect['photo_filename']}"):
+            # Показываем фото
+            st.image(defect['photo'], width=200)
+            st.write(f"**Описание:** {defect['description']}")
 
-        Задача: Проанализировать описание дефекта строительной конструкции и выбранные пункты нормативов.
+            # Поиск нормативов для этого дефекта
+            if st.button(f"🔍 Найти нормативы для дефекта {idx + 1}", key=f"search_{idx}"):
+                with st.spinner("Поиск..."):
+                    results = find_similar(defect['description'], giga, es, INDEX_NAME, top_k=TOP_K,
+                                           doc_filter=selected_doc_filter)
+                if results:
+                    st.session_state.current_search_results = results
+                    st.session_state.current_defect_idx = idx
+                    st.success("Найдены пункты. Выберите подходящие ниже.")
+                else:
+                    st.warning("Ничего не найдено. Попробуйте другое описание.")
 
-        Описание дефекта:
-        {st.session_state.defect_description}
+            # Если есть результаты поиска для этого дефекта, показываем их
+            if 'current_search_results' in st.session_state and st.session_state.current_defect_idx == idx:
+                for i, res in enumerate(st.session_state.current_search_results):
+                    with st.container():
+                        st.markdown(f"**{res['doc_name']}** (Совпадение: {res['score']:.2%})")
+                        st.write(res['text'][:300] + "...")
+                        if st.button(f"✅ Выбрать этот пункт", key=f"select_{idx}_{i}"):
+                            if (res['doc_name'], res['text']) not in defect['selected_chunks']:
+                                defect['selected_chunks'].append((res['doc_name'], res['text']))
+                                st.success("Пункт добавлен")
+                                st.rerun()
 
-        Выбранные пункты нормативов (с указанием документа):
-        {normatives_text}
+            # Показываем уже выбранные пункты для этого дефекта
+            if defect['selected_chunks']:
+                st.write("**Выбранные пункты:**")
+                for doc_name, chunk_text in defect['selected_chunks']:
+                    st.write(f"- {doc_name}: {chunk_text[:100]}...")
+                if st.button(f"🗑️ Очистить выбранные для дефекта {idx + 1}", key=f"clear_{idx}"):
+                    defect['selected_chunks'] = []
+                    st.rerun()
 
-        Твой ответ должен содержать три четкие секции:
-        1. **Анализ дефекта:** На основе нормативов опиши, почему данный дефект является нарушением.
-        2. **Рекомендации по устранению:** Конкретные шаги для исправления дефекта, ссылаясь на нормативы.
-        3. **Вывод о состоянии конструкции:** Общее заключение (например, "Конструкция находится в ограниченно работоспособном состоянии").
+    # Кнопка формирования общего отчёта
+    if st.button("📄 Сформировать общий отчёт по всем дефектам"):
+        with st.spinner("GigaChat анализирует дефекты..."):
+            # Формируем промпт
+            defects_text = ""
+            for i, defect in enumerate(st.session_state.defects, 1):
+                defects_text += f"Дефект {i}: {defect['photo_filename']}\n"
+                defects_text += f"Описание: {defect['description']}\n"
+                if defect['selected_chunks']:
+                    defects_text += "Соответствующие нормативные пункты:\n"
+                    for doc_name, chunk_text in defect['selected_chunks']:
+                        defects_text += f"- {doc_name}: {chunk_text[:200]}...\n"
+                else:
+                    defects_text += "Нормативные пункты не выбраны.\n"
+                defects_text += "\n"
+            prompt = f"""
+            Ты — эксперт по строительным нормам и правилам.
 
-        Ответ должен быть подробным, структурированным и написанным профессиональным русским языком.
-        """
+            Задача: Проанализировать описанные ниже дефекты строительных конструкций и выбранные пункты нормативов.
+            Для каждого дефекта опиши:
+            - вероятную причину возникновения дефекта;
+            - какие пункты нормативов нарушены (со ссылками);
+            - как устранить дефект (рекомендации по ремонту).
+            Затем дай общее заключение о состоянии конструкций.
 
-        messages = [Messages(role=MessagesRole.USER, content=prompt)]
-        chat_payload = Chat(messages=messages)
-        response = giga.chat(chat_payload)
-        analysis_text = response.choices[0].message.content
+            {defects_text}
 
-        st.session_state.analysis_text = analysis_text
-        st.session_state.analysis_done = True
+            Ответ должен быть структурирован: для каждого дефекта отдельный блок, затем общий вывод.
+            """
+            messages = [Messages(role=MessagesRole.USER, content=prompt)]
+            chat_payload = Chat(messages=messages)
+            response = giga.chat(chat_payload)
+            analysis_text = response.choices[0].message.content
 
-# Результат и скачивание PDF
-if st.session_state.get('analysis_done', False):
-    st.subheader("📊 Результат анализа")
-    st.markdown(st.session_state.analysis_text)
+            st.session_state.final_analysis = analysis_text
+            st.session_state.analysis_done = True
 
-    # Передаём в генератор PDF список кортежей (doc_name, chunk_text)
-    pdf_data = generate_report(
-        st.session_state.defect_description,
-        st.session_state.selected_chunks,
-        st.session_state.analysis_text
-    )
+# Отображение результатов анализа и кнопка скачивания PDF
+if st.session_state.analysis_done:
+    st.markdown("### 📊 Результаты анализа GigaChat")
+    st.write(st.session_state.final_analysis)
 
+    pdf_data = generate_report(st.session_state.defects, st.session_state.final_analysis)
     st.download_button(
         label="📥 Скачать отчёт в PDF",
         data=pdf_data,
-        file_name="construction_defect_report.pdf",
+        file_name="defect_report.pdf",
         mime="application/pdf"
     )
-
-    if st.button("🔄 Новый анализ"):
-        st.session_state.selected_chunks = []
+    if st.button("🔄 Начать новый анализ"):
+        st.session_state.defects = []
         st.session_state.analysis_done = False
+        st.session_state.final_analysis = ""
         st.rerun()

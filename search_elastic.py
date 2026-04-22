@@ -36,8 +36,8 @@ def search(query, es, index_name, giga, top_k=5):
 
 if __name__ == "__main__":
     giga = GigaChat(
-        credentials=os.getenv("GIGACHAT_CREDENTIALS"),
-        #credentials="",
+        #credentials=os.getenv("GIGACHAT_CREDENTIALS"),
+        credentials="",
         verify_ssl_certs=False,
         scope="GIGACHAT_API_PERS",
         model="GigaChat-Pro"
