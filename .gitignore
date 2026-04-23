@@ -4,8 +4,7 @@ data/
 .env
 *.pyc
 .DS_Store
-.env.elastic
-.streamlit/secrets.toml
+
 
 # Индексы FAISS (большие файлы)
 standards_index.faiss

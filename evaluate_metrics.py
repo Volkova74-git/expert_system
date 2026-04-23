@@ -16,7 +16,7 @@ TOP_K = 5
 def load_giga():
     """Инициализация клиента GigaChat (как в app_streamlit.py)"""
     return GigaChat(
-        credentials=os.getenv("GIGACHAT_CREDENTIALS", ""),
+        credentials=os.getenv("GIGACHAT_CREDENTIALS"),
         verify_ssl_certs=False,
         scope="GIGACHAT_API_PERS",
         model="GigaChat-Pro",

@@ -23,7 +23,7 @@ INDEX_NAME = "construction_standards"   # единое имя индекса
 def load_giga():
     # Ключ берётся из переменной окружения или указывается явно
     return GigaChat(
-        credentials=os.getenv("GIGACHAT_CREDENTIALS", "MDE5ZDhmZWEtMmE1Zi03NTFlLTk5OGEtZWI4NTc5YzM1ZjNiOmQ4OTZjOGQyLWJmMmItNDk2Ni05NzY5LWMzOGM1ZjZhZTk0MQ=="),
+        credentials=os.getenv("GIGACHAT_CREDENTIALS"),
         verify_ssl_certs=False,
         scope="GIGACHAT_API_PERS",
         model="GigaChat-Pro",
