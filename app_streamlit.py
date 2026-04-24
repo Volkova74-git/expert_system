@@ -16,7 +16,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Настройки
+# Настройка
 ES_HOST = "http://127.0.0.1:9200"
 INDEX_NAME = "construction_standards"
 TOP_K = 5
@@ -67,7 +67,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ---------- Функции для работы с GigaChat и Elasticsearch ----------
+# Функции для работы с GigaChat и Elasticsearch
 @st.cache_resource
 def load_giga():
     return GigaChat(
@@ -155,7 +155,7 @@ def generate_report(defects_data, analysis_text):
             except Exception as e:
                 story.append(Paragraph(f"[Ошибка загрузки фото: {e}]", style_body))
 
-        # Убрали строку с выводом имени файла
+       
         story.append(Paragraph(f"Описание: {defect['description']}", style_body))
 
         if defect['selected_chunks']:
@@ -213,8 +213,8 @@ if 'final_analysis' not in st.session_state:
 if 'form_version' not in st.session_state:
     st.session_state.form_version = 0
 
-# Блок добавления дефекта с предпросмотром
-st.markdown("Добавление нового дефекта")
+# Блок добавления дефекта с предпросмотром 
+st.markdown("### Добавление нового дефекта")
 
 current_version = st.session_state.form_version
 uploaded_photo = st.file_uploader("Загрузите фото дефекта", type=["jpg", "png", "jpeg"], key=f"new_photo_upload_{current_version}")
@@ -235,7 +235,7 @@ else:
         st.session_state.temp_photo_filename = ""
 
 defect_description = st.text_area("Описание дефекта", value="",
-                                   placeholder="Например: вздутие кровли, трещина в стене...", height=150, key=f"desc_{current_version}")
+                                   placeholder="Например: вздутие кровли...", height=150, key=f"desc_{current_version}")
 
 if st.button("Добавить дефект"):
     if st.session_state.temp_photo_bytes and defect_description.strip():
@@ -254,7 +254,7 @@ if st.button("Добавить дефект"):
     else:
         st.warning("Загрузите фото и введите описание")
 
-# Отображение списка дефектов
+#  Отображение списка дефектов 
 if st.session_state.defects:
     st.markdown("### Список добавленных дефектов")
     for idx, defect in enumerate(st.session_state.defects):
@@ -346,7 +346,7 @@ if st.session_state.defects:
                 st.session_state.final_analysis = analysis_text
                 st.session_state.analysis_done = True
 
-# Результат анализа и скачивание PDF
+# Результат анализа и скачивание PDF 
 if st.session_state.analysis_done:
     st.markdown("### Результаты анализа GigaChat")
     st.write(st.session_state.final_analysis)

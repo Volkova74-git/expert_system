@@ -9,19 +9,18 @@ from sentence_splitter import SentenceSplitter
 from tqdm import tqdm
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv()  
 
-# Настройки
+# Настройка
 STANDARDS_DIR = "standards"
 PROCESSED_DIR = os.path.join(STANDARDS_DIR, "processed")
 CHUNK_SIZE = 500
 CHUNK_OVERLAP = 50
 ES_HOST = "http://127.0.0.1:9200"
-INDEX_NAME = "construction_standards"   # единое имя индекса
+INDEX_NAME = "construction_standards"   
 
 
 def load_giga():
-    # Ключ берётся из переменной окружения или указывается явно
     return GigaChat(
         credentials=os.getenv("GIGACHAT_CREDENTIALS"),
         verify_ssl_certs=False,
@@ -150,9 +149,9 @@ def index_documents():
 
         # Перемещаем обработанный файл
         shutil.move(file_path, os.path.join(PROCESSED_DIR, json_file))
-        print(f"   ✅ Добавлено {len(chunks)} документов, файл перемещён в {PROCESSED_DIR}")
+        print(f"   Добавлено {len(chunks)} документов, файл перемещён в {PROCESSED_DIR}")
 
-    print("\n🎉 Все документы успешно проиндексированы!")
+    print("\n Все документы успешно проиндексированы!")
 
 if __name__ == "__main__":
     index_documents()

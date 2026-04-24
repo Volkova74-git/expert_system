@@ -5,7 +5,6 @@ from elasticsearch import Elasticsearch, helpers
 
 # Настройки
 INDEX_NAME = "construction_standards"
-# Название норматива – можно задать при запуске: python index_to_elasticsearch.py "ГОСТ Р 21.101-2020"
 if len(sys.argv) > 1:
     DOC_NAME = sys.argv[1]
 else:
@@ -70,4 +69,4 @@ for i, (chunk, emb) in enumerate(zip(chunks, embeddings)):
 if actions:
     helpers.bulk(es, actions)
 
-print(f"Добавлено {len(chunks)} документов в индекс {INDEX_NAME} (норматив: {DOC_NAME})")
+print(f" Добавлено {len(chunks)} документов в индекс {INDEX_NAME} (норматив: {DOC_NAME})")

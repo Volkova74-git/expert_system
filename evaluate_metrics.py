@@ -1,20 +1,18 @@
 import json
 import numpy as np
-import os   # <-- добавить
+import os   
 from elasticsearch import Elasticsearch
 from gigachat import GigaChat
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# Настройки
 ES_HOST = "http://127.0.0.1:9200"
 INDEX_NAME = "construction_standards"
 TOP_K = 5
 
 
 def load_giga():
-    """Инициализация клиента GigaChat (как в app_streamlit.py)"""
     return GigaChat(
         credentials=os.getenv("GIGACHAT_CREDENTIALS"),
         verify_ssl_certs=False,
@@ -26,15 +24,11 @@ def load_giga():
     )
 
 def get_embedding(giga, text: str):
-    """Получить эмбеддинг для текста через GigaChat"""
     response = giga.embeddings([text])
     return np.array(response.data[0].embedding, dtype=np.float32).tolist()
 
 def search_es(query_text, giga, es, index_name, top_k=TOP_K, doc_filter=None):
-    """
-    Поиск релевантных чанков (возвращает список _id).
-    Логика полностью совпадает с find_similar из app_streamlit.py.
-    """
+    
     query_vector = get_embedding(giga, query_text)
     base_query = {"match_all": {}}
     if doc_filter and doc_filter != "Все":
@@ -55,7 +49,6 @@ def search_es(query_text, giga, es, index_name, top_k=TOP_K, doc_filter=None):
     # Возвращаем список _id (строковых идентификаторов)
     return [hit['_id'] for hit in response['hits']['hits']]
 
-# Метрики
 def precision_at_k(relevant, retrieved, k):
     retrieved_k = retrieved[:k]
     if not retrieved_k:
