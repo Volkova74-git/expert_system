@@ -7,11 +7,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# ========== НАСТРОЙКИ ==========
+# Настройки
 ES_HOST = "http://127.0.0.1:9200"
 INDEX_NAME = "construction_standards"
 TOP_K = 5
-# ===============================
+
 
 def load_giga():
     """Инициализация клиента GigaChat (как в app_streamlit.py)"""
@@ -55,7 +55,7 @@ def search_es(query_text, giga, es, index_name, top_k=TOP_K, doc_filter=None):
     # Возвращаем список _id (строковых идентификаторов)
     return [hit['_id'] for hit in response['hits']['hits']]
 
-# ---------- Метрики ----------
+# Метрики
 def precision_at_k(relevant, retrieved, k):
     retrieved_k = retrieved[:k]
     if not retrieved_k:
@@ -86,7 +86,7 @@ def ndcg_at_k(relevant, retrieved, k):
     idcg = sum(ideal[i] / np.log2(i + 2) for i in range(len(ideal)))
     return dcg / idcg
 
-# ---------- Основная функция оценки ----------
+# Основная функция оценки
 def evaluate():
     # Загрузка тестовых запросов
     with open("test_queries.json", "r", encoding="utf-8") as f:

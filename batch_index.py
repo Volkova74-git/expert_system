@@ -9,16 +9,16 @@ from sentence_splitter import SentenceSplitter
 from tqdm import tqdm
 from dotenv import load_dotenv
 
-load_dotenv()  # загружаем переменные из .env
+load_dotenv()
 
-# ========== НАСТРОЙКИ ==========
+# Настройки
 STANDARDS_DIR = "standards"
 PROCESSED_DIR = os.path.join(STANDARDS_DIR, "processed")
 CHUNK_SIZE = 500
 CHUNK_OVERLAP = 50
 ES_HOST = "http://127.0.0.1:9200"
 INDEX_NAME = "construction_standards"   # единое имя индекса
-# ===============================
+
 
 def load_giga():
     # Ключ берётся из переменной окружения или указывается явно

@@ -3,14 +3,13 @@ import numpy as np
 import sys
 from elasticsearch import Elasticsearch, helpers
 
-# ========== НАСТРОЙКИ ==========
+# Настройки
 INDEX_NAME = "construction_standards"
 # Название норматива – можно задать при запуске: python index_to_elasticsearch.py "ГОСТ Р 21.101-2020"
 if len(sys.argv) > 1:
     DOC_NAME = sys.argv[1]
 else:
     DOC_NAME = "Неизвестный норматив"
-# ===============================
 
 # Загрузка текстов и эмбеддингов (из текущей папки)
 with open("standards_texts.pkl", "rb") as f:
@@ -49,7 +48,7 @@ else:
 # Подготовка bulk-запроса (добавление, а не перезапись)
 actions = []
 for i, (chunk, emb) in enumerate(zip(chunks, embeddings)):
-    # Генерируем уникальный ID: можно использовать doc_name + chunk_index
+    # Генерируем уникальный ID
     doc_id = f"{DOC_NAME}_{i}"
     action = {
         "_index": INDEX_NAME,
@@ -71,4 +70,4 @@ for i, (chunk, emb) in enumerate(zip(chunks, embeddings)):
 if actions:
     helpers.bulk(es, actions)
 
-print(f"✅ Добавлено {len(chunks)} документов в индекс {INDEX_NAME} (норматив: {DOC_NAME})")
+print(f"Добавлено {len(chunks)} документов в индекс {INDEX_NAME} (норматив: {DOC_NAME})")

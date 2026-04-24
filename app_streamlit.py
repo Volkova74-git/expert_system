@@ -16,11 +16,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# ========== НАСТРОЙКИ ==========
+# Настройки
 ES_HOST = "http://127.0.0.1:9200"
 INDEX_NAME = "construction_standards"
 TOP_K = 5
-# ===============================
 
 # Регистрация кириллического шрифта для PDF
 def register_russian_font():
@@ -178,7 +177,7 @@ def generate_report(defects_data, analysis_text):
     doc.build(story)
     return buffer.getvalue()
 
-# ---------- Интерфейс Streamlit ----------
+# Интерфейс Streamlit
 st.markdown('<div class="main-header">🏗️ Поиск и анализ дефектов по строительным нормативам</div>', unsafe_allow_html=True)
 
 # Подключения
@@ -214,8 +213,8 @@ if 'final_analysis' not in st.session_state:
 if 'form_version' not in st.session_state:
     st.session_state.form_version = 0
 
-# ---------- Блок добавления дефекта с предпросмотром ----------
-st.markdown("### Добавление нового дефекта")
+# Блок добавления дефекта с предпросмотром
+st.markdown("Добавление нового дефекта")
 
 current_version = st.session_state.form_version
 uploaded_photo = st.file_uploader("Загрузите фото дефекта", type=["jpg", "png", "jpeg"], key=f"new_photo_upload_{current_version}")
@@ -255,7 +254,7 @@ if st.button("Добавить дефект"):
     else:
         st.warning("Загрузите фото и введите описание")
 
-# ---------- Отображение списка дефектов ----------
+# Отображение списка дефектов
 if st.session_state.defects:
     st.markdown("### Список добавленных дефектов")
     for idx, defect in enumerate(st.session_state.defects):
@@ -347,7 +346,7 @@ if st.session_state.defects:
                 st.session_state.final_analysis = analysis_text
                 st.session_state.analysis_done = True
 
-# ---------- Результат анализа и скачивание PDF ----------
+# Результат анализа и скачивание PDF
 if st.session_state.analysis_done:
     st.markdown("### Результаты анализа GigaChat")
     st.write(st.session_state.final_analysis)
