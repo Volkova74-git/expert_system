@@ -3,14 +3,13 @@ import numpy as np
 import sys
 from elasticsearch import Elasticsearch, helpers
 
-# ========== НАСТРОЙКИ ==========
+# НАСТРОЙКИ
 INDEX_NAME = "construction_standards"
 # Название норматива – можно задать при запуске: python index_to_elasticsearch.py "ГОСТ Р 21.101-2020"
 if len(sys.argv) > 1:
     DOC_NAME = sys.argv[1]
 else:
     DOC_NAME = "Неизвестный норматив"
-# ===============================
 
 # Загрузка текстов и эмбеддингов (из текущей папки)
 with open("standards_texts.pkl", "rb") as f:
